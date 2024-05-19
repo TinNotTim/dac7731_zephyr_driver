@@ -31,9 +31,16 @@ properties:
       
       Rising dege triggered. Data is loaded from the input register to the DAC register.
   
+  # Won't include his one. The DAC API only allows passing in 1 value at a time, can't do daisy chain.
+  # chain-length:
+  #   type: int
+  #   default: 1
+  #   description: |
+  #     The number of DAC7731s in the daisy-chain.
+
   "#io-channel-cells":
     const: 1
-    
+
 io-channel-cells:
   - output
   
