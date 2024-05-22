@@ -1,7 +1,7 @@
 # Copyright (c) 2024, Tin Chiang.
 # SPDX-License-Identifier: Apache-2.0
 
-config DAC7731
+menuconfig DAC7731
 	bool "TI DAC7731 DAC driver"
 	default y
 	select SPI

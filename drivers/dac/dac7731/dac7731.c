@@ -3,8 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <math.h>
-#include <stdio.h>
+
 #include <zephyr/device.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/gpio.h>
@@ -34,7 +33,7 @@ struct dac7731_data {
 
 static int dac7731_config_reset(const struct device *dac7731)
 {
-	const struct dac7731_config *config = dev->config;
+	const struct dac7731_config *config = dac7731->config;
 	int ret;
 
 	/* Check if the gpio port exists */
@@ -70,7 +69,7 @@ static int dac7731_config_reset(const struct device *dac7731)
 
 static int dac7731_config_ldac(const struct device *dac7731)
 {
-	const struct dac7731_config *config = dev->config;
+	const struct dac7731_config *config = dac7731->config;
 	int ret;
 
 	/* Check if the gpio port exists */
@@ -107,7 +106,7 @@ static int dac7731_config_ldac(const struct device *dac7731)
 
 static int dac7731_reset(const struct device *dac7731)
 {
-	const struct dac7731_config *config = dev->config;
+	const struct dac7731_config *config = dac7731->config;
 	int ret;
 
 	/* Check if the gpio port is ready */
@@ -137,7 +136,7 @@ static int dac7731_reset(const struct device *dac7731)
 
 static int dac7731_load_value(const struct device *dac7731)
 {
-	const struct dac7731_config *config = dev->config;
+	const struct dac7731_config *config = dac7731->config;
 	int ret;
 
 	/* Check if the gpio port is ready */
@@ -190,7 +189,7 @@ static int dac7731_write_value(const struct device *dev, uint8_t channel,
 
 /* Define API member*/
 static const struct dac_driver_api dac7731_driver_api = {
-	.write_value = dac7731_write_value,
+	.write_value = dac7731_write_value
 };
 
 /* Init the device and gpio pins*/
@@ -226,21 +225,21 @@ static int dac7731_init(const struct device *dev)
 }
 
 #define CREATE_DAC7731_INST(inst)								  \
-	static struct dac7731_data dac7731_data_##inst;				  \
-	static const struct dac7731_config dac7731_config_##inst = {			  \
-		.reset_gpios = GPIO_DT_SPEC_INST_GET(inst, reset_gpios),		\
-		.ldac_gpios = GPIO_DT_SPEC_INST_GET(inst, ldac_gpios),		\
-		.bus = SPI_DT_SPEC_GET(inst, \
-			SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | \
-			SPI_WORD_SET(8) | SPI_MODE_CPHA, 0) \
-	};										  \
-	DEVICE_DT_INST_DEFINE(	\
-		inst, dac7731_init, \
-		NULL,\
-		&dac7731_data_##inst,	  \
-		&dac7731_config_##inst, \
-		POST_KERNEL,			  \
-		CONFIG_SPI_INIT_PRIORITY, \
+	static const struct dac7731_config dac7731_config_##inst = {  \
+		.reset_gpios = GPIO_DT_SPEC_INST_GET(inst, reset_gpios),  \
+		.ldac_gpios = GPIO_DT_SPEC_INST_GET(inst, ldac_gpios),	  \
+		.bus = SPI_DT_SPEC_GET(inst,							  \
+			SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB |				  \
+			SPI_WORD_SET(8) | SPI_MODE_CPHA, 0) 				  \
+	};										  					  \
+	DEVICE_DT_INST_DEFINE(										  \
+		inst, dac7731_init, 									  \
+		NULL,													  \
+		&dac7731_data_##inst,	  								  \
+		&dac7731_config_##inst,   								  \
+		POST_KERNEL,			  								  \
+		CONFIG_DAC7731_INIT_PRIORITY, 							  \
 		&dac7731_driver_api);
 
+/* Call the device creation macro for each instance: */
 DT_INST_FOREACH_STATUS_OKAY(CREATE_DAC7731_INST)
