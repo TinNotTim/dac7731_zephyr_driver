@@ -3,11 +3,10 @@
 
 menuconfig DAC7731
 	bool "TI DAC7731 DAC driver"
-	default y
+	# default y
 	select SPI
 	help
 	  Enable the driver for the TI DAC7731.
-
 if DAC7731
 
 config DAC7731_INIT_PRIORITY

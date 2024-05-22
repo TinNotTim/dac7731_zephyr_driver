@@ -169,20 +169,71 @@ static int dac7731_write_value(const struct device *dev, uint8_t channel,
 				uint32_t value)
 {
 	const struct dac7731_config *config = dev->config;
-	struct dac7731_data *data = dev->data;
+	uint8_t regval[2];
 	int ret;
 	
 	/* Check if the channel is valid*/
-	if (channel > 0) {
+	if (channel > 1) {
 		LOG_ERR("unsupported channel %d", channel);
 		return -ENOTSUP;
 	}
+	/* Writting any value to channel 1 will reset the dac output*/
+	else if (channel == 1)
+	{
+		ret = dac7731_reset(dev);
+		if(ret != 0)
+		{
+			LOG_ERR("Failed to reset the dac output");
+			return ret;
+		}
+		/* successful */
+		LOG_DBG("Reset the DAC");
+		return 0;
+	}
+	
 
-	/* */
+	/* Clip the input value to 16bits*/
+	if (value > 0xFFFF)
+	{
+		LOG_WRN("Input value exceed maximum. Value Clipped.");
+		value = 0xFFFF;
+	}
 
+	/* split the value into two bytes in big endian*/
+	regval[0] = value >> 8;
+	regval[1] = value & 0xFF;
+	/* Send out the value through SPI*/
+	const struct spi_buf buf[1] = { 
+		{
+			.buf = regval,
+			.len = 2
+		}
+	};
+	struct spi_buf_set tx = {
+		.buffers = buf,
+		.count = ARRAY_SIZE(buf),
+	};
 
+	if (k_is_in_isr()) {
+		/* Prevent SPI transactions from an ISR */
+		return -EWOULDBLOCK;
+	}
 
+	ret = spi_write_dt(&config->bus, &tx);
+	if (ret != 0)
+	{
+		LOG_ERR("Failed to write to DAC7731");
+		return ret;
+	}
+	/* load the value and update dac output*/
+	ret = dac7731_load_value(dev);
+	if (ret != 0)
+	{
+		LOG_ERR("Failed to load value to DAC7731");
+		return ret;
+	}
 	/* success*/
+	LOG_DBG("Set the DAC value");
 	return 0;
 }
 
@@ -225,10 +276,11 @@ static int dac7731_init(const struct device *dev)
 }
 
 #define CREATE_DAC7731_INST(inst)								  \
+	static struct dac7731_data dac7731_data_##inst = {};    \
 	static const struct dac7731_config dac7731_config_##inst = {  \
 		.reset_gpios = GPIO_DT_SPEC_INST_GET(inst, reset_gpios),  \
 		.ldac_gpios = GPIO_DT_SPEC_INST_GET(inst, ldac_gpios),	  \
-		.bus = SPI_DT_SPEC_GET(inst,							  \
+		.bus = SPI_DT_SPEC_GET(DT_INST(inst, DT_DRV_COMPAT),					  \
 			SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB |				  \
 			SPI_WORD_SET(8) | SPI_MODE_CPHA, 0) 				  \
 	};										  					  \
