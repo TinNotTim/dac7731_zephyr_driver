@@ -17,8 +17,8 @@
 #define DT_DRV_COMPAT ti_dac7731
 
 /* Register the module to logging submodule*/
-LOG_MODULE_REGISTER(DAC7731, LOG_LEVEL_DBG);
-// LOG_MODULE_REGISTER(DAC7731, CONFIG_SPI_LOG_LEVEL);
+// LOG_MODULE_REGISTER(DAC7731, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(DAC7731, CONFIG_SPI_LOG_LEVEL);
 
 /* Define the device data and config struct*/
 struct dac7731_config {
@@ -160,7 +160,7 @@ static int dac7731_load_value(const struct device *dac7731)
     }
 
 	/* successful*/
-	LOG_DBG("Successfully reset the chip.");
+	LOG_DBG("Successfully load the value.");
 	return 0;
 }
 
