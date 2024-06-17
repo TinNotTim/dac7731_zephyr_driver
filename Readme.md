@@ -1,17 +1,35 @@
-# Out of tree Adafruit NAU7802 loadcell driver module for Zephyr RTOS
-*NAU7802 is a precision 24-bit analog-to-digital converter (ADC) designed for weigh scale applications.*
+# Out of tree Texas Instruments DAC7731 driver module for Zephyr RTOS
+*The DAC7731 is a 16-bit Digital-to-Analog Converter (DAC) which provides 16 bits of monotonic performance over the specified operating temperature range and offers a +10V internal reference.*
+
+## Hardware Configuration
+The DAC7731 can be configured through different pin setting. Options as below:
+- DAC output range: \
+The chip can be configured in a ±10V, ±5V, or +10V output range. 
+
+- Reference voltage: \
+The chip has +10V internal voltage, which can be enabled or disabled. It can also use an external voltage source as reference.
+
+- Reset behavior: \
+The DAC output can be reset to either min-scale or mid-scale.
+
+
+
+This driver module doesn't provide any capibility to change the configurations above. Please refer to the datasheet for further information if needed. The driver only consider the following pins:
+- RST pin
+- SPI pins
+- LDAC pin
 
 ## Supported Zephyr versions
-* 3.7.0 (May 2024)
+* 3.6.99 (May 2024)
 ## Usage
 ### Module installation
 Add this project to your `west.yml` manifest:
 ```yaml
  # out of tree device driver
-- name: NAU7802_LOADCELL
-    path: modules/nau7802_loadcell
-    revision: refs/tags/zephyr-v3.7.0
-    url: https://github.com/nobodyguy/nau7802_loadcell_zephyr_driver
+	- name: DAC7731
+      path: modules/dac7731
+      revision: refs/tags/zephyr-v3.6.99
+      url: https://github.com/TinNotTim/dac7731_zephyr_driver
 ```
 
 So your projects should look something like this:
@@ -23,10 +41,10 @@ manifest:
       revision: refs/tags/zephyr-v3.2.0
       import: true
 # out of tree device driver
-    - name: NAU7802_LOADCELL
-      path: modules/nau7802_loadcell
-      revision: refs/tags/zephyr-v3.7.0
-      url: https://github.com/nobodyguy/nau7802_loadcell_zephyr_driver
+    - name: DAC7731
+      path: modules/dac7731
+      revision: refs/tags/zephyr-v3.6.99
+      url: https://github.com/TinNotTim/dac7731_zephyr_driver
 ```
 
 This will import the driver and allow you to use it in your code.
@@ -34,27 +52,43 @@ This will import the driver and allow you to use it in your code.
 Additionally make sure that you run `west update` when you've added this entry to your `west.yml`.
 
 ### Driver configuration
-Enable sensor driver subsystem and NAU7802 driver by adding these entries to your `prj.conf`:
+Enable sensor driver subsystem and DAC7731 driver by adding these entries to your `prj.conf`:
 ```ini
-CONFIG_SENSOR=y
-CONFIG_NAU7802_LOADCELL=y
-# Interrut triggerred configurations
-CONFIG_NAU7802_LOADCELL_TRIGGER_NONE=y
-CONFIG_NAU7802_LOADCELL_TRIGGER_OWN_THREAD=y
-CONFIG_NAU7802_LOADCELL_TRIGGER_GLOBAL_THREAD=y
-CONFIG_NAU7802_LOADCELL_TRIGGER_DIRECT=y
+CONFIG_DAC=y
+CONFIG_DAC7731=y
 ```
 
-Define NAU7802 in your board `.overlay` like this example:
+The DAC7731 can be configured through different pin setting. Options as below:
+- DAC output range: \
+The chip can be configured in a ±10V, ±5V, or +10V output range. 
+
+- Reference voltage: \
+The chip has +10V internal voltage, which can be enabled or disabled. It can also use an external voltage source as reference.
+
+- Reset behavior: \
+The DAC output can be reset to either min-scale or mid-scale.
+
+
+
+This driver module doesn't provide any capibility to change the configurations above. Please refer to the datasheet for further information if needed. The driver only consider the following pins:
+- RST pin
+- SPI pins
+- LDAC pin
+
+Define DAC7731 in your board `.overlay` like this example:
 ```dts
-/{	
-    force_sens_1: nau7802_loadcell@2A {
-        // label = "NAU7802_1";
-        compatible = "nuvoton,nau7802_loadcell";
-        reg = <0x2A>;
-        drdy-gpios = <&gpiod 1 GPIO_ACTIVE_HIGH>;
-        conversions-per-second = <320>; //SPS
-        gain = <128>;
+&spi3 {
+    status = "okay";
+    pinctrl-0 = <&spi3_sck_pb3 &spi3_miso_pb4 &spi3_mosi_pb5>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpiod 12 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>
+
+    dac7731_1: dac7731@0 {
+        compatible = "ti,dac7731";
+        spi-max-frequency = <2000000>;
+        reg = <0>;
+        reset-gpios = <&gpiod 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        ldac-gpios = <&gpiod 13 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
     };
 };
 ```
@@ -62,98 +96,61 @@ Define NAU7802 in your board `.overlay` like this example:
 ### Driver usage
 ```c
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/sensor.h>
-#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/dac.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-/* this is for getting the SENSOR_CHAN_FORCE*/
-#include "../../../modules/nau7802_loadcell/drivers/sensor/nau7802_loadcell/nau7802_loadcell.h"
+
+static K_THREAD_STACK_DEFINE(dac1_thread_stack, 512);
+static struct k_thread dac1_thread_data;
 
 /* Declare the membership in registered logging module*/
-LOG_MODULE_REGISTER(LOADCELL_TEST, CONFIG_SENSOR_LOG_LEVEL);
+LOG_MODULE_REGISTER(DAC1_TEST, CONFIG_SPI_LOG_LEVEL);
 
-static int process_sensor_value(const struct device *dev)
+void dac1_thread(void)
 {
-	struct sensor_value force;
-	int ret;
+    /* Get the device pointer to dac7731 */
+	const struct device *const dac7731 = DEVICE_DT_GET_ONE(ti_dac7731);
 
-	ret = sensor_sample_fetch(dev);
-	if (ret != 0) {
-		LOG_ERR("ret: %d, Sensor sample update error", ret);
-		return ret;
-	}
-
-	ret = sensor_channel_get(dev, SENSOR_CHAN_FORCE, &force);
-	if (ret != 0) {
-		LOG_ERR("ret: %d, Cannot read NAU7802 force channelr", ret);
-		return ret;
-	}
-
-	LOG_INF("Force:%f", sensor_value_to_double(&force));
-	return 0;
-}
-
-static void nau7802_loadcell_handler(const struct device *dev,
-			   const struct sensor_trigger *trig)
-{
-	process_sensor_value(dev);
-}
-
-void test_loadcell(void)
-{
-    /* Get the device pointer to nau7802 sensor*/
-	const struct device *const nau7802 = DEVICE_DT_GET_ONE(nuvoton_nau7802_loadcell);
-
-	if (!device_is_ready(nau7802)) {
-		LOG_ERR("sensor: device not ready.");
+	if (!device_is_ready(dac7731)) {
+		LOG_ERR("DAC: device not ready.");
 		return;
-	}
-
-	/* set the offset and calibration factor*/
-	float32_t offset = 2.505000511475965652e+01;
-	float32_t calibFactor = 6.527824679590503775e-06;
-	const struct sensor_value offset_attri;
-	const struct sensor_value calib_attri;
-
-	/* Currently don't have a good way to pass floating point value to the sensor driver*/
-	/* Use the memcpy to do bit-to-bit copy, from float32_t to int32_t*/
-	memcpy(&offset_attri.val1, &offset, sizeof(offset));
-	memcpy(&calib_attri.val1, &calibFactor, sizeof(calibFactor));
-
-	if(sensor_attr_set(nau7802, SENSOR_CHAN_FORCE, SENSOR_ATTR_OFFSET, &offset_attri) != 0){
-		LOG_ERR("Cannot configure the offset");
-		return;
-	}
-
-	if(sensor_attr_set(nau7802, SENSOR_CHAN_FORCE, SENSOR_ATTR_CALIBRATION, &calib_attri) != 0){
-		LOG_ERR("Cannot configure the offset");
-		return;
-	}
-
-	/* Set the tragger type and handler function if needed*/
-	if (IS_ENABLED(CONFIG_NAU7802_LOADCELL_TRIGGER)) {
-		struct sensor_trigger trig = {
-			.type = SENSOR_TRIG_DATA_READY,
-			.chan = SENSOR_CHAN_ALL,
-		};
-		if (sensor_trigger_set(nau7802, &trig, nau7802_loadcell_handler) < 0) {
-			LOG_ERR("Cannot configure trigger");
-			return;
-		}
 	}
 	
-	while (!IS_ENABLED(CONFIG_NAU7802_LOADCELL_TRIGGER)) {
-		process_sensor_value(nau7802);
-		k_sleep(K_MSEC(2000));
+	while (IS_ENABLED(CONFIG_DAC7731)) {      
+		/* Write a 16-bit value to channel-0 to set the dac output */
+		/* The driver will clip the value to 0xFFFF*/ 
+		dac_write_value(dac7731, 0, 0x8000+0xFF);
+		k_sleep(K_MSEC(1000));
+
+		/* Write an arbitrary value to channel-1 to reset the dac output */
+		/* The DAC API doesn't provide a dedicated reset function*/
+		dac_write_value(dac7731, 1, 0);
+		k_sleep(K_MSEC(1000));
 	}
 	k_sleep(K_FOREVER);
+}
 
 
+int main(void){
+	
+	k_thread_create(&dac1_thread_data, dac1_thread_stack,
+					K_THREAD_STACK_SIZEOF(dac1_thread_stack),
+					(k_thread_entry_t)dac1_thread,
+					NULL, NULL, NULL,
+					K_PRIO_COOP(7), 0,
+					K_NO_WAIT);
+	k_thread_name_set(&dac1_thread_data, "dac1_print");
+
+	while(1){
+		k_sleep(K_SECONDS(10));
+	}
+
+	return 0;
 }
 ```
 Relevant `prj.conf`:
 ```ini
-CONFIG_SENSOR=y
-CONFIG_NAU7802_LOADCELL=y
-CONFIG_NAU7802_LOADCELL_TRIGGER_GLOABL_THREAD=y
+CONFIG_DAC=y
+CONFIG_DAC7731=y
 CONFIG_LOG=y
 ```
